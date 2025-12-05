@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import sdk from "@farcaster/frame-sdk"; // Sadece sdk'yı import ediyoruz
+import sdk from "@farcaster/frame-sdk"; 
 import { createWalletClient, custom, parseEther, encodeFunctionData } from "viem";
 import { baseSepolia } from "viem/chains";
 
-// Tipi otomatik algıla (En güvenli yöntem)
+// Tipi otomatik algıla
 type FrameContext = Awaited<typeof sdk.context>;
 
 // --- AYARLAR ---
@@ -48,38 +48,45 @@ export default function Page() {
     setTxHash(null);
 
     try {
-      // Kullanıcının Farcaster Cüzdanına Bağlan
-      // @ts-ignore
+      // 1. Farcaster Cüzdan Sağlayıcısını Al (window.ethereum YERİNE sdk.wallet.ethProvider)
+      // Bu kısım Mini App'lerin çalışması için kritiktir.
+      const provider = sdk.wallet.ethProvider;
+      
+      if (!provider) {
+        throw new Error("Farcaster cüzdanı bulunamadı (SDK Provider eksik).");
+      }
+
       const walletClient = createWalletClient({
         chain: baseSepolia,
-        // @ts-ignore
-        transport: custom(window.ethereum), // Farcaster'ın enjekte ettiği provider
+        transport: custom(provider),
       });
 
+      // 2. Adresleri İste
       const [address] = await walletClient.requestAddresses();
-
-      // İşlem Verisini Hazırla
+      
+      // 3. Kontrat Verisini Hazırla
       const data = encodeFunctionData({
         abi: CONTRACT_ABI,
         functionName: "deploy",
         args: [BigInt(selectedSquare)],
       });
 
-      // İşlemi Gönder
+      // 4. İşlemi Gönder
       const hash = await walletClient.sendTransaction({
         to: CONTRACT_ADDRESS,
         account: address,
-        value: parseEther("0.0001"), // Yatırım miktarı
+        value: parseEther("0.0001"), 
         data: data,
+        chain: baseSepolia // Zinciri açıkça belirtmek güvenlidir
       });
 
       setTxHash(hash);
-      // Başarılı işlem sonrası ses efekti eklenebilir (opsiyonel)
-      
-    } catch (error) {
+      // alert(`🎉 Kazı Başladı! TX: ${hash}`); // Alert yerine UI'da gösteriyoruz zaten
+
+    } catch (error: any) {
       console.error("Mining Error:", error);
-      // Hata detayını görmek için alert ekleyelim
-      alert("İşlem iptal edildi veya hata oluştu.");
+      // Hatayı ekrana bas ki ne olduğunu anlayalım
+      alert(`Hata: ${error.message || "Bilinmeyen bir hata oluştu"}`);
     } finally {
       setIsMining(false);
     }
@@ -94,7 +101,7 @@ export default function Page() {
         <span className="text-xs text-yellow-600/80">(Her kazı 0.0001 ETH)</span>
       </p>
 
-      {/* 5x5 IZGARA ALANI (GÜNCELLENMİŞ TASARIM) */}
+      {/* 5x5 IZGARA ALANI */}
       <div className="grid grid-cols-5 gap-3 mb-8 bg-slate-900/50 p-4 rounded-2xl shadow-xl border border-slate-800 backdrop-blur-sm">
         {Array.from({ length: 25 }).map((_, index) => (
           <button
@@ -108,11 +115,9 @@ export default function Page() {
                 : "bg-slate-800/80 hover:bg-slate-700 text-slate-600 border border-slate-700/50"}
             `}
           >
-            {/* Kare İçi (Sadece seçilince ikon göster) */}
             {selectedSquare === index && (
               <span className="animate-bounce">⛏️</span>
             )}
-            {/* Seçilmemiş kareler için hafif doku/ikon (Opsiyonel: ❓) */}
             {selectedSquare !== index && (
               <span className="opacity-20">🟫</span> 
             )}
