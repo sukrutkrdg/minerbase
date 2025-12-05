@@ -1,387 +1,216 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import sdk from "@farcaster/frame-sdk";
-import { 
-  createWalletClient, 
-  createPublicClient, 
-  http, 
-  custom, 
-  parseEther, 
-  formatEther, 
-  encodeFunctionData 
-} from "viem";
-import { baseSepolia } from "viem/chains";
+import { useState, useEffect } from 'react';
 
-// --- TİP TANIMLAMALARI ---
-type FrameContext = Awaited<typeof sdk.context>;
+// --- SABİTLER VE AYARLAR ---
 
-interface RoundData {
-  id: number;
-  endTime: number;
-  totalEth: string;
-  stakes: bigint[];
-  finalized: boolean;
-  winner: number;
-}
+// 1. Kontrat Adresinizi buraya girin
+const CONTRACT_ADDRESS = "0xYOUR_CONTRACT_ADDRESS_HERE"; 
 
-// --- AYARLAR ---
-const CONTRACT_ADDRESS = "0xb68bC7FEDf18c5cF41b39ff75ecD9c04C1164244"; 
-const ENTRY_FEE = "0.0001"; // ETH Giriş Ücreti
-
+// 2. Basit ABI
 const CONTRACT_ABI = [
-  // Write Functions
-  {
-    "type": "function",
-    "name": "deploy",
-    "inputs": [{ "name": "square", "type": "uint256" }],
-    "outputs": [],
-    "stateMutability": "payable"
-  },
-  {
-    "type": "function",
-    "name": "reset",
-    "inputs": [],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  // Read Functions
-  {
-    "type": "function",
-    "name": "roundId",
-    "inputs": [],
-    "outputs": [{ "name": "", "type": "uint256" }],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "getRoundDetails",
-    "inputs": [{ "name": "_roundId", "type": "uint256" }],
-    "outputs": [
-      { "name": "endTime", "type": "uint256" },
-      { "name": "totalEth", "type": "uint256" },
-      { "name": "squareStakes", "type": "uint256[25]" },
-      { "name": "finalized", "type": "bool" },
-      { "name": "winner", "type": "uint256" }
-    ],
-    "stateMutability": "view"
-  }
-] as const;
+  "function dig(uint256 x, uint256 y) external",
+  "function getBoard() external view returns (uint8[5][5] memory)",
+  "event Dig(address indexed player, uint256 x, uint256 y, bool isBomb)"
+];
 
-export default function Page() {
-  const [isSDKLoaded, setIsSDKLoaded] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [context, setContext] = useState<FrameContext>();
+export default function Home() {
+  // State tanımları - ethers nesneleri için 'any' veya genel tipler kullanıyoruz çünkü CDN'den yüklenecek
+  const [provider, setProvider] = useState<any>(null);
+  const [signer, setSigner] = useState<any>(null);
+  const [contract, setContract] = useState<any>(null);
+  const [address, setAddress] = useState<string>("");
   
-  // Oyun Durumları
-  const [selectedSquare, setSelectedSquare] = useState<number | null>(null);
-  const [isLoading, setIsLoading] = useState(false); // Mining veya Reset işlemi için ortak loading
-  const [txHash, setTxHash] = useState<string | null>(null);
+  // Kütüphane yükleme durumu
+  const [isEthersLoaded, setIsEthersLoaded] = useState(false);
   
-  // Veri Durumları
-  const [roundData, setRoundData] = useState<RoundData | null>(null);
-  const [timeLeftLabel, setTimeLeftLabel] = useState<string>("Yükleniyor...");
-  const [isRoundOver, setIsRoundOver] = useState(false); 
-  const [fetchError, setFetchError] = useState<boolean>(false);
+  // Oyun Durumu
+  // 0: Kapalı, 1: Boş/Güvenli, 2: Bomba
+  const [board, setBoard] = useState<number[][]>(Array(5).fill(Array(5).fill(0)));
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState("Kütüphaneler yükleniyor...");
 
-  // Public Client (Okuma işlemleri)
-  const publicClient = createPublicClient({
-    chain: baseSepolia,
-    // DAHA HIZLI VE GÜVENİLİR RPC ADRESİ
-    transport: http("https://base-sepolia-rpc.publicnode.com") 
-  });
-
-  // --- BAŞLANGIÇ ---
+  // Ethers.js kütüphanesini CDN üzerinden yükle
   useEffect(() => {
-    const load = async () => {
-      const ctx = await sdk.context;
-      setContext(ctx);
-      sdk.actions.ready();
-      setIsSDKLoaded(true);
+    const script = document.createElement('script');
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/ethers/6.11.1/ethers.umd.min.js";
+    script.async = true;
+    script.onload = () => {
+      setIsEthersLoaded(true);
+      setStatus("Cüzdan Bağlanmadı");
     };
-    if (sdk && !isSDKLoaded) {
-      load();
-    }
-  }, [isSDKLoaded]);
+    script.onerror = () => {
+      setStatus("Hata: Ethers kütüphanesi yüklenemedi.");
+    };
+    document.body.appendChild(script);
 
-  // --- VERİ ÇEKME ---
-  const fetchData = useCallback(async () => {
-    try {
-      const currentRoundId = await publicClient.readContract({
-        address: CONTRACT_ADDRESS,
-        abi: CONTRACT_ABI,
-        functionName: "roundId"
-      });
-
-      const details = await publicClient.readContract({
-        address: CONTRACT_ADDRESS,
-        abi: CONTRACT_ABI,
-        functionName: "getRoundDetails",
-        args: [currentRoundId]
-      });
-
-      setRoundData({
-        id: Number(currentRoundId),
-        endTime: Number(details[0]),
-        totalEth: formatEther(details[1]),
-        stakes: details[2] as unknown as bigint[],
-        finalized: details[3],
-        winner: Number(details[4])
-      });
-      setFetchError(false);
-    } catch (error) {
-      console.error("Veri hatası:", error);
-      setFetchError(true);
-    }
-  }, [publicClient]);
-
-  // Periyodik güncelleme
-  useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 3000);
-    return () => clearInterval(interval);
-  }, [fetchData]);
-
-  // --- SAYAÇ ---
-  useEffect(() => {
-    if (!roundData) return;
-
-    const updateTimer = () => {
-      const now = Math.floor(Date.now() / 1000);
-      const diff = roundData.endTime - now;
-
-      if (roundData.finalized) {
-        setTimeLeftLabel("🏁 Tur Bitti");
-        setIsRoundOver(true);
-      } else if (diff <= 0) {
-        setTimeLeftLabel("⏳ Süre Doldu");
-        setIsRoundOver(true);
-      } else {
-        const min = Math.floor(diff / 60);
-        const sec = diff % 60;
-        setTimeLeftLabel(`${min}dk ${sec < 10 ? '0' + sec : sec}sn`);
-        setIsRoundOver(false);
+    return () => {
+      if (document.body.contains(script)) {
+        document.body.removeChild(script);
       }
     };
+  }, []);
 
-    updateTimer();
-    const timer = setInterval(updateTimer, 1000);
-    return () => clearInterval(timer);
-  }, [roundData]);
-
-  // --- İŞLEM FONKSİYONU (DEPLOY veya RESET) ---
-  const handleTransaction = useCallback(async (type: 'deploy' | 'reset') => {
-    if (type === 'deploy' && selectedSquare === null) return;
+  // Cüzdan Bağlantısı
+  const connectWallet = async () => {
+    if (!isEthersLoaded) {
+      setStatus("Kütüphane henüz yüklenmedi, lütfen bekleyin.");
+      return;
+    }
     
-    setIsLoading(true);
-    setTxHash(null);
+    // Window üzerinden ethers erişimi
+    const ethers = (window as any).ethers;
+
+    if (!(window as any).ethereum) {
+      setStatus("Lütfen Metamask veya uyumlu bir cüzdan yükleyin.");
+      return;
+    }
 
     try {
-      const provider = sdk.wallet.ethProvider;
-      if (!provider) {
-        alert("Cüzdan sağlayıcısı bulunamadı. Lütfen Frame uyumlu bir istemci (Warpcast vb.) kullanın.");
-        throw new Error("Provider not found");
+      setLoading(true);
+      // Base Ağına Geçiş İsteği
+      try {
+        await (window as any).ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: '0x2105' }], // Base Mainnet ID (8453 in hex)
+        });
+      } catch (switchError: any) {
+        console.log("Ağ değiştirilemedi veya kullanıcı reddetti.");
       }
 
-      const walletClient = createWalletClient({
-        chain: baseSepolia,
-        transport: custom(provider),
+      const _provider = new ethers.BrowserProvider((window as any).ethereum);
+      const _signer = await _provider.getSigner();
+      const _address = await _signer.getAddress();
+      
+      // Kontrat örneği oluştur
+      const _contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, _signer);
+
+      setProvider(_provider);
+      setSigner(_signer);
+      setAddress(_address);
+      setContract(_contract);
+      setStatus("Bağlandı: Hazır");
+      
+    } catch (error) {
+      console.error("Bağlantı hatası:", error);
+      setStatus("Bağlantı hatası oluştu.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- KRİTİK İYİLEŞTİRME 1 & 2 ---
+  const handleDig = async (rowIndex: number, colIndex: number) => {
+    if (!contract || !signer) {
+      setStatus("Lütfen önce cüzdan bağlayın.");
+      return;
+    }
+
+    // İYİLEŞTİRME 1: Dolu Kare Engeli
+    // Eğer yerel state'te burası zaten açılmış görünüyorsa işlemi durdur.
+    if (board[rowIndex][colIndex] !== 0) {
+        console.log("Bu kare zaten kazılmış.");
+        return; 
+    }
+
+    try {
+      setLoading(true);
+      setStatus("İşlem onaylanıyor...");
+
+      // İYİLEŞTİRME 2: Manuel Gaz Limiti
+      // RPC hatalarını ve 'cannot estimate gas' hatalarını bypass eder.
+      // ethers v6 syntax'ı kullanıyoruz
+      const tx = await contract.dig(rowIndex, colIndex, {
+        gasLimit: 300000 // Sabit gaz limiti (Base için genellikle yeterli)
       });
 
-      const [address] = await walletClient.requestAddresses();
-      let data, value;
+      setStatus("İşlem gönderildi, madencilik bekleniyor...");
+      
+      await tx.wait(); // İşlemin bloklanmasını bekle
 
-      if (type === 'deploy') {
-        data = encodeFunctionData({
-          abi: CONTRACT_ABI,
-          functionName: "deploy",
-          args: [BigInt(selectedSquare!)],
-        });
-        value = parseEther(ENTRY_FEE);
-      } else {
-        // Reset işlemi
-        data = encodeFunctionData({
-          abi: CONTRACT_ABI,
-          functionName: "reset",
-          args: [],
-        });
-        value = BigInt(0);
-      }
-
-      const hash = await walletClient.sendTransaction({
-        to: CONTRACT_ADDRESS,
-        account: address,
-        value: value,
-        data: data,
-        chain: baseSepolia
-      });
-
-      setTxHash(hash);
-      // İşlem onaylanana kadar beklemeden arayüzü güncellemeye çalış
-      setTimeout(() => fetchData(), 2000);
+      setStatus("Kazma başarılı!");
+      
+      // Başarılı işlemden sonra hücreyi yerel olarak güncelle
+      const newBoard = board.map(row => [...row]);
+      newBoard[rowIndex][colIndex] = 1; // Geçici olarak 'açıldı' (elmas) olarak işaretle
+      setBoard(newBoard);
 
     } catch (error: any) {
-      console.error("İşlem hatası:", error);
-      // Kullanıcı işlemi reddettiyse sessiz kal, değilse alert ver
-      if (!error.message.includes("User rejected")) {
-         alert(`İşlem başarısız: ${error.message || "Bilinmeyen hata"}`);
+      console.error("Kazma hatası:", error);
+      
+      // Kullanıcı dostu hata mesajları
+      if (error.code === 'ACTION_REJECTED') {
+        setStatus("İşlemi reddettiniz.");
+      } else if (error.message && error.message.includes("taken")) {
+        setStatus("Hata: Bu kare zaten alınmış!");
+      } else {
+        setStatus(`Hata: ${error.reason || (error.info ? error.info.error.message : error.message) || "İşlem hatası"}`);
       }
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
-  }, [selectedSquare, fetchData]);
+  };
 
-  if (!isSDKLoaded) return <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white">Yükleniyor...</div>;
-
+  // Basit 5x5 Grid Render
   return (
-    <div className="w-full min-h-screen bg-slate-950 text-white p-4 flex flex-col items-center overflow-y-auto font-sans select-none">
-      
-      {/* BAŞLIK */}
-      <div className="text-center mb-6 w-full max-w-sm">
-        <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-yellow-200 mb-2 drop-shadow-sm">
-          BaseMiner ⛏️
-        </h1>
+    <main className="flex min-h-screen flex-col items-center justify-center bg-gray-900 p-4 text-white">
+      <div className="w-full max-w-md space-y-8">
         
-        {fetchError && (
-          <div className="mb-2 p-2 text-xs bg-red-900/50 border border-red-800 text-red-200 rounded animate-pulse">
-            Veri bağlantısında sorun var, tekrar deneniyor...
-          </div>
-        )}
+        {/* Başlık */}
+        <div className="text-center">
+          <h1 className="text-4xl font-bold text-blue-500">Base Minesweeper</h1>
+          <p className="mt-2 text-gray-400">Mayınları bul, ödülleri kazan.</p>
+        </div>
 
-        {roundData ? (
-          <div className="grid grid-cols-3 gap-2 bg-slate-900/80 p-3 rounded-xl border border-slate-800 text-xs shadow-inner">
-            <div className="flex flex-col items-start">
-              <span className="text-slate-400 font-medium">Tur</span>
-              <span className="font-bold text-white text-sm">#{roundData.id}</span>
-            </div>
-            <div className="flex flex-col items-center border-l border-r border-slate-800 px-2">
-              <span className="text-slate-400 font-medium">Havuz</span>
-              <span className="font-bold text-green-400 text-sm">{Number(roundData.totalEth).toFixed(4)} ETH</span>
-            </div>
-            <div className="flex flex-col items-end">
-              <span className="text-slate-400 font-medium">Süre</span>
-              <span className={`font-bold text-sm ${isRoundOver ? 'text-red-400' : 'text-yellow-300'}`}>
-                {timeLeftLabel}
-              </span>
-            </div>
-          </div>
-        ) : (
-          <div className="h-16 w-full bg-slate-900 animate-pulse rounded-xl"></div>
-        )}
-      </div>
+        {/* Durum Paneli */}
+        <div className="rounded-lg bg-gray-800 p-4 text-center border border-gray-700">
+          <p className={`text-sm font-mono ${status.includes("Hata") ? "text-red-400" : "text-green-400"}`}>
+            {status}
+          </p>
+          {!address && (
+            <button
+              onClick={connectWallet}
+              disabled={loading || !isEthersLoaded}
+              className="mt-3 w-full rounded bg-blue-600 px-4 py-2 font-bold hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            >
+              {loading ? "Bağlanıyor..." : (!isEthersLoaded ? "Yükleniyor..." : "Cüzdanı Bağla")}
+            </button>
+          )}
+          {address && (
+             <p className="mt-2 text-xs text-gray-500 truncate">Hesap: {address}</p>
+          )}
+        </div>
 
-      {/* IZGARA */}
-      <div className="relative mb-6">
-        <div className="grid grid-cols-5 gap-2 p-3 bg-slate-900 rounded-2xl border border-slate-800 shadow-2xl ring-1 ring-slate-800/50">
-          {Array.from({ length: 25 }).map((_, index) => {
-            const stake = roundData?.stakes ? Number(formatEther(roundData.stakes[index])) : 0;
-            const isWinner = roundData?.finalized && roundData?.winner === index;
-            const isSelected = selectedSquare === index;
-
-            return (
+        {/* Oyun Tahtası */}
+        <div className="grid grid-cols-5 gap-2 bg-gray-800 p-4 rounded-xl shadow-2xl border border-gray-700">
+          {board.map((row, rIndex) => (
+            row.map((cell, cIndex) => (
               <button
-                key={index}
-                onClick={() => !isRoundOver && !roundData?.finalized && setSelectedSquare(index)}
-                disabled={isRoundOver || !!roundData?.finalized}
+                key={`${rIndex}-${cIndex}`}
+                onClick={() => handleDig(rIndex, cIndex)}
+                disabled={loading || cell !== 0} // Doluysa veya yükleniyorsa disable et
                 className={`
-                  w-12 h-12 sm:w-14 sm:h-14 rounded-xl relative transition-all duration-200
-                  flex flex-col items-center justify-center overflow-hidden
-                  ${isWinner 
-                    ? "bg-yellow-500 text-black shadow-[0_0_20px_rgba(234,179,8,0.6)] z-10 scale-110 border-2 border-white" 
-                    : isSelected
-                      ? "bg-slate-700 border-2 border-yellow-400 shadow-[0_0_10px_rgba(250,204,21,0.2)]"
-                      : "bg-slate-800 hover:bg-slate-750 border border-slate-700/50"}
+                  aspect-square w-full rounded-md text-2xl font-bold transition-all duration-200
+                  ${cell === 0 
+                    ? "bg-gray-600 hover:bg-gray-500 active:scale-95" 
+                    : cell === 1 
+                      ? "bg-green-600 cursor-default shadow-inner" 
+                      : "bg-red-600 cursor-default"
+                  }
+                  ${loading ? "opacity-50 cursor-not-allowed" : ""}
                 `}
               >
-                <span className={`absolute top-1 left-1.5 text-[9px] leading-none font-mono ${isWinner ? 'text-yellow-900 font-bold' : 'text-slate-600'}`}>
-                  {index + 1}
-                </span>
-                
-                {stake > 0 && (
-                  <span className={`text-[9px] font-bold mt-1 ${isWinner ? 'text-black' : 'text-green-400'}`}>
-                    {stake.toFixed(3)}
-                  </span>
-                )}
-
-                {isWinner && <span className="absolute -bottom-1 -right-1 text-lg animate-bounce">🏆</span>}
-                {!isWinner && isSelected && <span className="absolute bottom-1 right-1 text-xs opacity-75">⛏️</span>}
+                {cell === 0 ? "" : cell === 1 ? "💎" : "💣"}
               </button>
-            );
-          })}
+            ))
+          ))}
         </div>
-      </div>
-
-      {/* BUTON ALANI */}
-      <div className="w-full max-w-xs flex flex-col gap-3">
-        {/* Duruma göre Buton Değişir */}
-        {isRoundOver && !roundData?.finalized ? (
-          <button
-            onClick={() => handleTransaction('reset')}
-            disabled={isLoading}
-            className="w-full py-4 rounded-xl font-bold text-lg bg-red-600 hover:bg-red-500 text-white shadow-lg transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed border border-red-400/30"
-          >
-            {isLoading ? (
-               <div className="flex items-center justify-center gap-2">
-                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                 <span>Sıfırlanıyor...</span>
-               </div>
-            ) : "🔄 Turu Manuel Sıfırla"}
-          </button>
-        ) : (
-          <button
-            onClick={() => handleTransaction('deploy')}
-            disabled={selectedSquare === null || isLoading || isRoundOver || !!roundData?.finalized}
-            className={`
-              w-full py-4 rounded-xl font-bold text-lg shadow-lg relative overflow-hidden transition-all active:scale-95
-              ${(isRoundOver || roundData?.finalized)
-                ? "bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700"
-                : selectedSquare === null
-                  ? "bg-slate-800 text-slate-500 cursor-not-allowed"
-                  : isLoading
-                    ? "bg-yellow-700 text-yellow-200 cursor-wait"
-                    : "bg-gradient-to-r from-yellow-500 to-yellow-600 text-black hover:shadow-yellow-500/20 hover:brightness-110"}
-            `}
-          >
-            {roundData?.finalized 
-              ? "Tur Sona Erdi" 
-              : isLoading 
-                ? (
-                  <div className="flex items-center justify-center gap-2">
-                    <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin"></div>
-                    <span>İşleniyor...</span>
-                  </div>
-                ) 
-                : selectedSquare === null 
-                  ? "Bir Kare Seçin" 
-                  : `KAZI YAP (#${selectedSquare + 1})`}
-          </button>
-        )}
-
-        {!isRoundOver && !roundData?.finalized && (
-          <div className="flex justify-between text-[10px] text-slate-500 px-2 font-mono">
-            <span>Giriş: {ENTRY_FEE} ETH</span>
-            <span>+ Gas</span>
-          </div>
-        )}
-      </div>
-
-      {/* TRANSACTION SUCCESS TOAST */}
-      {txHash && (
-        <div className="mt-6 w-full max-w-xs bg-green-950/40 border border-green-500/30 rounded-lg p-3 text-center backdrop-blur-sm animate-fade-in">
-          <div className="flex items-center justify-center gap-2 mb-1">
-             <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-             <span className="font-bold text-green-400 text-sm">İşlem Gönderildi!</span>
-          </div>
-          <a 
-            href={`https://sepolia.basescan.org/tx/${txHash}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-green-300/60 hover:text-green-200 underline decoration-dotted underline-offset-2"
-          >
-            Explorer'da Görüntüle ↗
-          </a>
+        
+        <div className="text-xs text-center text-gray-500">
+            Base Mainnet • Gas Limit: 300k
         </div>
-      )}
-    </div>
+
+      </div>
+    </main>
   );
 }
