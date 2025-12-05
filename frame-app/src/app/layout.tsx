@@ -1,24 +1,23 @@
 import type { Metadata } from "next";
-import "./globals.css"; // Eğer globals.css varsa
+import "./globals.css";
 
-// Vercel URL'in (Otomatik alır veya sen elle yazarsın)
 const appUrl = process.env.NEXT_PUBLIC_HOST || "http://localhost:3000";
 
 export const metadata: Metadata = {
   title: "BaseMiner",
   description: "Base ağında madencilik oyunu",
   other: {
-    // FRAME v2 METADATA STANDARDI
+    // 🚨 KRİTİK DEĞİŞİKLİK: Eski cast butonları yerine "launch_frame" aksiyonu
     "fc:frame": JSON.stringify({
       version: "next",
-      imageUrl: `${appUrl}/grid.png`, // Kapak görseli
+      imageUrl: `${appUrl}/opengraph-image`, // Veya public/grid.png
       button: {
-        title: "⛏️ Oyunu Başlat", // Feed'de görünecek buton
+        title: "⛏️ Oyunu Başlat",
         action: {
           type: "launch_frame",
           name: "BaseMiner",
-          url: appUrl, // Butona basınca açılacak sayfa (bizim page.tsx)
-          splashImageUrl: `${appUrl}/grid.png`,
+          url: appUrl,
+          splashImageUrl: `${appUrl}/icon.png`, // Veya grid.png
           splashBackgroundColor: "#0f172a",
         },
       },
