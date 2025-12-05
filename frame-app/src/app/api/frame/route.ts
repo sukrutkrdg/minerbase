@@ -3,7 +3,7 @@ import { getFrameMessage, getFrameHtmlResponse } from '@coinbase/onchainkit/fram
 import { encodeFunctionData, parseEther } from 'viem';
 import { baseSepolia } from 'viem/chains'; // Test için Sepolia, canlı için 'base' kullanacağız
 
-// Kontratın ABI'si (Sadece ihtiyacımız olan fonksiyonlar)
+// Kontratın ABI'si (Sadece idddddddddddddddddddddddhtiyacımız olan fonksiyonlar)
 const CONTRACT_ABI = [
   {
     "type": "function",
@@ -14,7 +14,7 @@ const CONTRACT_ABI = [
   }
 ] as const;
 
-// DEPLOY ETTİĞİN KONTRAT ADRESİNİ BURAYA YAZMALISIN!
+// DEPLOY ETTİĞİN KONTRAT ADRESİNİ BUdddddddddRAYA YAZMALISIN!
 const CONTRACT_ADDRESS = "0xb68bC7FEDf18c5cF41b39ff75ecD9c04C1164244"; // Deploy sonrası terminalden aldığın adres
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
