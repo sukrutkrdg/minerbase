@@ -26,7 +26,7 @@ interface RoundData {
 }
 
 // --- AYARLAR ---
-const CONTRACT_ADDRESS = "0xb68bC7FEDf18c5cF41b39ff75ecD9c04C1164244"; // Kontrat adresin
+const CONTRACT_ADDRESS = "0xb68bC7FEDf18c5cF41b39ff75ecD9c04C1164244"; 
 const ENTRY_FEE = "0.0001"; // ETH Giriş Ücreti
 
 const CONTRACT_ABI = [
@@ -81,13 +81,14 @@ export default function Page() {
   // Veri Durumları
   const [roundData, setRoundData] = useState<RoundData | null>(null);
   const [timeLeftLabel, setTimeLeftLabel] = useState<string>("Yükleniyor...");
-  const [isRoundOver, setIsRoundOver] = useState(false); // Süre bitti mi?
+  const [isRoundOver, setIsRoundOver] = useState(false); 
   const [fetchError, setFetchError] = useState<boolean>(false);
 
   // Public Client (Okuma işlemleri)
   const publicClient = createPublicClient({
     chain: baseSepolia,
-    transport: http("https://sepolia.base.org")
+    // DAHA HIZLI VE GÜVENİLİR RPC ADRESİ
+    transport: http("https://base-sepolia-rpc.publicnode.com") 
   });
 
   // --- BAŞLANGIÇ ---
@@ -177,7 +178,10 @@ export default function Page() {
 
     try {
       const provider = sdk.wallet.ethProvider;
-      if (!provider) throw new Error("Cüzdan bulunamadı (Frame içinde misiniz?)");
+      if (!provider) {
+        alert("Cüzdan sağlayıcısı bulunamadı. Lütfen Frame uyumlu bir istemci (Warpcast vb.) kullanın.");
+        throw new Error("Provider not found");
+      }
 
       const walletClient = createWalletClient({
         chain: baseSepolia,
@@ -216,9 +220,12 @@ export default function Page() {
       // İşlem onaylanana kadar beklemeden arayüzü güncellemeye çalış
       setTimeout(() => fetchData(), 2000);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("İşlem hatası:", error);
-      alert("İşlem başarısız oldu. Konsolu kontrol edin.");
+      // Kullanıcı işlemi reddettiyse sessiz kal, değilse alert ver
+      if (!error.message.includes("User rejected")) {
+         alert(`İşlem başarısız: ${error.message || "Bilinmeyen hata"}`);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -227,7 +234,7 @@ export default function Page() {
   if (!isSDKLoaded) return <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white">Yükleniyor...</div>;
 
   return (
-    <div className="w-full min-h-screen bg-slate-950 text-white p-4 flex flex-col items-center overflow-y-auto font-sans">
+    <div className="w-full min-h-screen bg-slate-950 text-white p-4 flex flex-col items-center overflow-y-auto font-sans select-none">
       
       {/* BAŞLIK */}
       <div className="text-center mb-6 w-full max-w-sm">
@@ -236,24 +243,24 @@ export default function Page() {
         </h1>
         
         {fetchError && (
-          <div className="mb-2 p-2 text-xs bg-red-900/50 border border-red-800 text-red-200 rounded">
-            Bağlantı sorunu var, tekrar deneniyor...
+          <div className="mb-2 p-2 text-xs bg-red-900/50 border border-red-800 text-red-200 rounded animate-pulse">
+            Veri bağlantısında sorun var, tekrar deneniyor...
           </div>
         )}
 
         {roundData ? (
           <div className="grid grid-cols-3 gap-2 bg-slate-900/80 p-3 rounded-xl border border-slate-800 text-xs shadow-inner">
             <div className="flex flex-col items-start">
-              <span className="text-slate-400">Tur</span>
-              <span className="font-bold text-white">#{roundData.id}</span>
+              <span className="text-slate-400 font-medium">Tur</span>
+              <span className="font-bold text-white text-sm">#{roundData.id}</span>
             </div>
             <div className="flex flex-col items-center border-l border-r border-slate-800 px-2">
-              <span className="text-slate-400">Havuz</span>
-              <span className="font-bold text-green-400">{Number(roundData.totalEth).toFixed(4)} ETH</span>
+              <span className="text-slate-400 font-medium">Havuz</span>
+              <span className="font-bold text-green-400 text-sm">{Number(roundData.totalEth).toFixed(4)} ETH</span>
             </div>
             <div className="flex flex-col items-end">
-              <span className="text-slate-400">Süre</span>
-              <span className={`font-bold ${isRoundOver ? 'text-red-400' : 'text-yellow-300'}`}>
+              <span className="text-slate-400 font-medium">Süre</span>
+              <span className={`font-bold text-sm ${isRoundOver ? 'text-red-400' : 'text-yellow-300'}`}>
                 {timeLeftLabel}
               </span>
             </div>
@@ -265,7 +272,7 @@ export default function Page() {
 
       {/* IZGARA */}
       <div className="relative mb-6">
-        <div className="grid grid-cols-5 gap-2 p-3 bg-slate-900 rounded-2xl border border-slate-800 shadow-2xl">
+        <div className="grid grid-cols-5 gap-2 p-3 bg-slate-900 rounded-2xl border border-slate-800 shadow-2xl ring-1 ring-slate-800/50">
           {Array.from({ length: 25 }).map((_, index) => {
             const stake = roundData?.stakes ? Number(formatEther(roundData.stakes[index])) : 0;
             const isWinner = roundData?.finalized && roundData?.winner === index;
@@ -278,15 +285,15 @@ export default function Page() {
                 disabled={isRoundOver || !!roundData?.finalized}
                 className={`
                   w-12 h-12 sm:w-14 sm:h-14 rounded-xl relative transition-all duration-200
-                  flex flex-col items-center justify-center
+                  flex flex-col items-center justify-center overflow-hidden
                   ${isWinner 
                     ? "bg-yellow-500 text-black shadow-[0_0_20px_rgba(234,179,8,0.6)] z-10 scale-110 border-2 border-white" 
                     : isSelected
                       ? "bg-slate-700 border-2 border-yellow-400 shadow-[0_0_10px_rgba(250,204,21,0.2)]"
-                      : "bg-slate-800 hover:bg-slate-700 border border-slate-700/50"}
+                      : "bg-slate-800 hover:bg-slate-750 border border-slate-700/50"}
                 `}
               >
-                <span className={`absolute top-1 left-1.5 text-[9px] leading-none ${isWinner ? 'text-yellow-900 font-bold' : 'text-slate-600'}`}>
+                <span className={`absolute top-1 left-1.5 text-[9px] leading-none font-mono ${isWinner ? 'text-yellow-900 font-bold' : 'text-slate-600'}`}>
                   {index + 1}
                 </span>
                 
@@ -296,8 +303,8 @@ export default function Page() {
                   </span>
                 )}
 
-                {isWinner && <span className="absolute -bottom-1 -right-1 text-lg">🏆</span>}
-                {!isWinner && isSelected && <span className="absolute bottom-1 right-1 text-xs">⛏️</span>}
+                {isWinner && <span className="absolute -bottom-1 -right-1 text-lg animate-bounce">🏆</span>}
+                {!isWinner && isSelected && <span className="absolute bottom-1 right-1 text-xs opacity-75">⛏️</span>}
               </button>
             );
           })}
@@ -311,9 +318,14 @@ export default function Page() {
           <button
             onClick={() => handleTransaction('reset')}
             disabled={isLoading}
-            className="w-full py-4 rounded-xl font-bold text-lg bg-red-600 hover:bg-red-500 text-white shadow-lg transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full py-4 rounded-xl font-bold text-lg bg-red-600 hover:bg-red-500 text-white shadow-lg transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed border border-red-400/30"
           >
-            {isLoading ? "Sıfırlanıyor..." : "🔄 Turu Manuel Sıfırla"}
+            {isLoading ? (
+               <div className="flex items-center justify-center gap-2">
+                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                 <span>Sıfırlanıyor...</span>
+               </div>
+            ) : "🔄 Turu Manuel Sıfırla"}
           </button>
         ) : (
           <button
@@ -327,13 +339,18 @@ export default function Page() {
                   ? "bg-slate-800 text-slate-500 cursor-not-allowed"
                   : isLoading
                     ? "bg-yellow-700 text-yellow-200 cursor-wait"
-                    : "bg-gradient-to-r from-yellow-500 to-yellow-600 text-black hover:shadow-yellow-500/20"}
+                    : "bg-gradient-to-r from-yellow-500 to-yellow-600 text-black hover:shadow-yellow-500/20 hover:brightness-110"}
             `}
           >
             {roundData?.finalized 
               ? "Tur Sona Erdi" 
               : isLoading 
-                ? "İşlem Yapılıyor..." 
+                ? (
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin"></div>
+                    <span>İşleniyor...</span>
+                  </div>
+                ) 
                 : selectedSquare === null 
                   ? "Bir Kare Seçin" 
                   : `KAZI YAP (#${selectedSquare + 1})`}
@@ -348,17 +365,20 @@ export default function Page() {
         )}
       </div>
 
-      {/* TRANSACTION SUCCESS */}
+      {/* TRANSACTION SUCCESS TOAST */}
       {txHash && (
-        <div className="mt-6 w-full max-w-xs bg-green-950/40 border border-green-500/30 rounded-lg p-3 text-center backdrop-blur-sm animate-in fade-in slide-in-from-bottom-4">
-          <div className="text-green-400 font-bold text-sm mb-1">✅ İşlem Gönderildi!</div>
+        <div className="mt-6 w-full max-w-xs bg-green-950/40 border border-green-500/30 rounded-lg p-3 text-center backdrop-blur-sm animate-fade-in">
+          <div className="flex items-center justify-center gap-2 mb-1">
+             <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+             <span className="font-bold text-green-400 text-sm">İşlem Gönderildi!</span>
+          </div>
           <a 
             href={`https://sepolia.basescan.org/tx/${txHash}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs text-green-300/60 hover:text-green-200 underline decoration-dotted"
+            className="text-xs text-green-300/60 hover:text-green-200 underline decoration-dotted underline-offset-2"
           >
-            Explorer'da Görüntüle
+            Explorer'da Görüntüle ↗
           </a>
         </div>
       )}
