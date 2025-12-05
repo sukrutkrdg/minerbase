@@ -1,6 +1,5 @@
 {
   "compilerOptions": {
-    "target": "es5",
     "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "skipLibCheck": true,
@@ -8,10 +7,7 @@
     "noEmit": true,
     "esModuleInterop": true,
     "module": "esnext",
-    // 🚨 KRİTİK DEĞİŞİKLİK: 'bundler' yerine 'node' veya 'node16' deniyoruz
-    // Ama Next.js 13+ için en uyumlusu 'bundler' olsa da hata veriyorsa
-    // 'moduleResolution' ayarını şu şekilde güncelliyoruz:
-    "moduleResolution": "node", 
+    "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
     "jsx": "preserve",
