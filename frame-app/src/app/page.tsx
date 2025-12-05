@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import sdk, { type FrameContext } from "@farcaster/frame-sdk";
+import sdk from "@farcaster/frame-sdk"; // Sadece sdk'yı import ediyoruz
 import { createWalletClient, custom, parseEther, encodeFunctionData } from "viem";
 import { baseSepolia } from "viem/chains";
+
+// Tipi otomatik algıla (En güvenli yöntem)
+type FrameContext = Awaited<typeof sdk.context>;
 
 // --- AYARLAR ---
 const CONTRACT_ADDRESS = "0xb68bC7FEDf18c5cF41b39ff75ecD9c04C1164244"; // Senin Kontrat Adresin
@@ -28,7 +31,8 @@ export default function Page() {
   // SDK'yı Yükle
   useEffect(() => {
     const load = async () => {
-      setContext(await sdk.context);
+      const ctx = await sdk.context;
+      setContext(ctx);
       sdk.actions.ready();
     };
     if (sdk && !isSDKLoaded) {
@@ -72,12 +76,13 @@ export default function Page() {
       setTxHash(hash);
       alert(`🎉 Kazı Başladı! TX: ${hash}`);
       
-      // İsteğe bağlı: İşlem bitince pencereyi kapat
+      // İsteğe bağlı: İşlem bitince pencereyi kapatabilirsin
       // sdk.actions.close(); 
 
     } catch (error) {
       console.error("Mining Error:", error);
-      alert("Bir hata oluştu veya işlem reddedildi.");
+      // Hata detayını görmek için alert ekleyelim
+      alert("İşlem iptal edildi veya hata oluştu.");
     } finally {
       setIsMining(false);
     }
