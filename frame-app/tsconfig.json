@@ -1,34 +1,30 @@
 {
   "compilerOptions": {
-    "lib": [
-      "dom",
-      "dom.iterable",
-      "esnext"
-    ],
+    "target": "es5",
+    "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "skipLibCheck": true,
-    "strict": false,
+    "strict": true,
     "noEmit": true,
-    "incremental": true,
-    "module": "esnext",
     "esModuleInterop": true,
-    "moduleResolution": "node",
+    "module": "esnext",
+    // 🚨 KRİTİK DEĞİŞİKLİK: 'bundler' yerine 'node' veya 'node16' deniyoruz
+    // Ama Next.js 13+ için en uyumlusu 'bundler' olsa da hata veriyorsa
+    // 'moduleResolution' ayarını şu şekilde güncelliyoruz:
+    "moduleResolution": "node", 
     "resolveJsonModule": true,
     "isolatedModules": true,
     "jsx": "preserve",
+    "incremental": true,
     "plugins": [
       {
         "name": "next"
       }
-    ]
+    ],
+    "paths": {
+      "@/*": ["./src/*"]
+    }
   },
-  "include": [
-    "next-env.d.ts",
-    ".next/types/**/*.ts",
-    "**/*.ts",
-    "**/*.tsx"
-  ],
-  "exclude": [
-    "node_modules"
-  ]
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules"]
 }
