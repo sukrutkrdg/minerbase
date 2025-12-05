@@ -1,0 +1,50 @@
+# --- Genel / İşletim Sistemi ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# --- Güvenlik (ÇOK ÖNEMLİ) ---
+.env
+.env.*
+!.env.example
+contracts/.env
+bot/.env
+frame-app/.env
+frame-app/.env.local
+frame-app/.env.development.local
+frame-app/.env.test.local
+frame-app/.env.production.local
+
+# --- Foundry (Akıllı Kontratlar) ---
+contracts/cache/
+contracts/out/
+contracts/broadcast/
+contracts/lib/
+# Foundry kütüphaneleri genellikle git submodule olarak yönetilir ama
+# eğer submodule kullanmıyorsan lib klasörünü de ignore edebilirsin.
+# Biz submodule kullanacaksak 'contracts/lib/' satırını kaldırabilirsin.
+
+# --- Node.js / NPM / Yarn (Frontend & Bot) ---
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- Next.js (Frontend) ---
+frame-app/.next/
+frame-app/build/
+frame-app/dist/
+frame-app/.vercel/
+
+# --- TypeScript (Bot & Frontend) ---
+*.tsbuildinfo
+bot/dist/
+bot/build/
+
+# --- Test Coverage ---
+coverage/
+coverage.json
