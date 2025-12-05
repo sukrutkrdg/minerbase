@@ -74,11 +74,8 @@ export default function Page() {
       });
 
       setTxHash(hash);
-      alert(`🎉 Kazı Başladı! TX: ${hash}`);
+      // Başarılı işlem sonrası ses efekti eklenebilir (opsiyonel)
       
-      // İsteğe bağlı: İşlem bitince pencereyi kapatabilirsin
-      // sdk.actions.close(); 
-
     } catch (error) {
       console.error("Mining Error:", error);
       // Hata detayını görmek için alert ekleyelim
@@ -90,28 +87,35 @@ export default function Page() {
 
   // --- ARAYÜZ (UI) ---
   return (
-    <div className="w-full min-h-screen bg-slate-900 text-white p-4 flex flex-col items-center">
-      <h1 className="text-3xl font-bold mb-2 text-yellow-400">BaseMiner ⛏️</h1>
+    <div className="w-full min-h-screen bg-slate-950 text-white p-4 flex flex-col items-center justify-start overflow-y-auto">
+      <h1 className="text-3xl font-bold mb-2 text-yellow-400 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]">BaseMiner ⛏️</h1>
       <p className="mb-6 text-slate-400 text-sm text-center">
         Şanslı kareyi bul, ödülü kap! <br/>
-        <span className="text-xs">(Her kazı 0.0001 ETH)</span>
+        <span className="text-xs text-yellow-600/80">(Her kazı 0.0001 ETH)</span>
       </p>
 
-      {/* 5x5 IZGARA ALANI */}
-      <div className="grid grid-cols-5 gap-2 mb-8 bg-slate-800 p-2 rounded-xl shadow-lg border border-slate-700">
+      {/* 5x5 IZGARA ALANI (GÜNCELLENMİŞ TASARIM) */}
+      <div className="grid grid-cols-5 gap-3 mb-8 bg-slate-900/50 p-4 rounded-2xl shadow-xl border border-slate-800 backdrop-blur-sm">
         {Array.from({ length: 25 }).map((_, index) => (
           <button
             key={index}
             onClick={() => setSelectedSquare(index)}
             className={`
-              w-12 h-12 rounded-md font-bold text-lg transition-all duration-200
-              flex items-center justify-center
+              w-14 h-14 sm:w-16 sm:h-16 rounded-xl font-bold text-2xl transition-all duration-200
+              flex items-center justify-center relative overflow-hidden
               ${selectedSquare === index 
-                ? "bg-yellow-500 text-black scale-110 shadow-[0_0_15px_rgba(234,179,8,0.5)]" 
-                : "bg-slate-700 hover:bg-slate-600 text-slate-500"}
+                ? "bg-yellow-500 text-black scale-110 shadow-[0_0_20px_rgba(234,179,8,0.6)] z-10 border-2 border-yellow-300" 
+                : "bg-slate-800/80 hover:bg-slate-700 text-slate-600 border border-slate-700/50"}
             `}
           >
-            {selectedSquare === index ? "⛏️" : index + 1}
+            {/* Kare İçi (Sadece seçilince ikon göster) */}
+            {selectedSquare === index && (
+              <span className="animate-bounce">⛏️</span>
+            )}
+            {/* Seçilmemiş kareler için hafif doku/ikon (Opsiyonel: ❓) */}
+            {selectedSquare !== index && (
+              <span className="opacity-20">🟫</span> 
+            )}
           </button>
         ))}
       </div>
@@ -125,31 +129,31 @@ export default function Page() {
             w-full py-4 rounded-xl font-bold text-xl shadow-lg
             transition-all duration-300
             ${selectedSquare === null 
-              ? "bg-slate-700 text-slate-500 cursor-not-allowed" 
+              ? "bg-slate-800 text-slate-600 cursor-not-allowed border border-slate-700" 
               : isMining 
-                ? "bg-yellow-600 cursor-wait animate-pulse"
-                : "bg-gradient-to-r from-yellow-400 to-yellow-600 text-black hover:scale-105"}
+                ? "bg-yellow-700 cursor-wait animate-pulse text-yellow-200"
+                : "bg-gradient-to-br from-yellow-400 to-yellow-600 text-black hover:scale-105 hover:shadow-[0_0_20px_rgba(234,179,8,0.4)] border-b-4 border-yellow-700 active:border-b-0 active:translate-y-1"}
           `}
         >
-          {isMining ? "Kazılıyor..." : selectedSquare === null ? "Bir Kare Seç" : `Kare #${selectedSquare + 1} Kazı Yap`}
+          {isMining ? "⛏️ Kazılıyor..." : selectedSquare === null ? "Bir Kare Seç" : `KAZI YAP! (#${selectedSquare + 1})`}
         </button>
       </div>
 
       {/* BİLGİ / DURUM */}
       {txHash && (
-        <div className="mt-4 p-3 bg-green-900/50 border border-green-500 rounded-lg text-xs break-all text-center max-w-xs">
-          ✅ İşlem Gönderildi! <br/>
+        <div className="mt-4 p-3 bg-green-900/30 border border-green-500/50 rounded-lg text-xs break-all text-center max-w-xs animate-fade-in">
+          ✅ <span className="font-bold text-green-400">İşlem Gönderildi!</span> <br/>
           <a 
             href={`https://sepolia.basescan.org/tx/${txHash}`} 
             target="_blank" 
-            className="underline text-green-300"
+            className="underline text-green-300/80 hover:text-green-200"
           >
             Explorer'da Gör
           </a>
         </div>
       )}
 
-      <div className="mt-auto pt-8 text-slate-600 text-xs">
+      <div className="mt-auto pt-8 text-slate-600/50 text-[10px] font-mono">
         Contract: {CONTRACT_ADDRESS.slice(0,6)}...{CONTRACT_ADDRESS.slice(-4)}
       </div>
     </div>
