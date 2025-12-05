@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import sdk, { type Context } from "@farcaster/frame-sdk";
+import sdk, { type FrameContext } from "@farcaster/frame-sdk";
 import { createWalletClient, custom, parseEther, encodeFunctionData } from "viem";
 import { baseSepolia } from "viem/chains";
 
@@ -20,7 +20,7 @@ const CONTRACT_ABI = [
 
 export default function Page() {
   const [isSDKLoaded, setIsSDKLoaded] = useState(false);
-  const [context, setContext] = useState<Context.FrameContext>();
+  const [context, setContext] = useState<FrameContext>();
   const [selectedSquare, setSelectedSquare] = useState<number | null>(null);
   const [isMining, setIsMining] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
