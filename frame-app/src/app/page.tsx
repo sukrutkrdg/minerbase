@@ -25,12 +25,12 @@ interface RoundData {
   winner: number;
 }
 
-// --- SABİTLER ---
-const CONTRACT_ADDRESS = "0xb68bC7FEDf18c5cF41b39ff75ecD9c04C1164244";
-const ENTRY_FEE = "0.0001"; // ETH cinsinden giriş ücreti
+// --- AYARLAR ---
+const CONTRACT_ADDRESS = "0xb68bC7FEDf18c5cF41b39ff75ecD9c04C1164244"; // Kontrat adresin
+const ENTRY_FEE = "0.0001"; // ETH Giriş Ücreti
 
 const CONTRACT_ABI = [
-  // Write (Yazma)
+  // Write Functions
   {
     "type": "function",
     "name": "deploy",
@@ -38,7 +38,14 @@ const CONTRACT_ABI = [
     "outputs": [],
     "stateMutability": "payable"
   },
-  // Read (Okuma)
+  {
+    "type": "function",
+    "name": "reset",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  // Read Functions
   {
     "type": "function",
     "name": "roundId",
@@ -66,28 +73,29 @@ export default function Page() {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [context, setContext] = useState<FrameContext>();
   
-  // Oyun State'leri
+  // Oyun Durumları
   const [selectedSquare, setSelectedSquare] = useState<number | null>(null);
-  const [isMining, setIsMining] = useState(false);
+  const [isLoading, setIsLoading] = useState(false); // Mining veya Reset işlemi için ortak loading
   const [txHash, setTxHash] = useState<string | null>(null);
   
-  // Veri State'leri
+  // Veri Durumları
   const [roundData, setRoundData] = useState<RoundData | null>(null);
-  const [timeLeft, setTimeLeft] = useState<string>("Yükleniyor...");
+  const [timeLeftLabel, setTimeLeftLabel] = useState<string>("Yükleniyor...");
+  const [isRoundOver, setIsRoundOver] = useState(false); // Süre bitti mi?
   const [fetchError, setFetchError] = useState<boolean>(false);
 
-  // Public Client (Okuma işlemleri için - Memoized dışarıda tutulabilir ama burada da ok)
+  // Public Client (Okuma işlemleri)
   const publicClient = createPublicClient({
     chain: baseSepolia,
     transport: http("https://sepolia.base.org")
   });
 
-  // --- BAŞLANGIÇ AYARLARI ---
+  // --- BAŞLANGIÇ ---
   useEffect(() => {
     const load = async () => {
       const ctx = await sdk.context;
       setContext(ctx);
-      sdk.actions.ready(); // Frame yüklendiğinde Farcaster'a bildir
+      sdk.actions.ready();
       setIsSDKLoaded(true);
     };
     if (sdk && !isSDKLoaded) {
@@ -95,7 +103,7 @@ export default function Page() {
     }
   }, [isSDKLoaded]);
 
-  // --- VERİ ÇEKME (READ) ---
+  // --- VERİ ÇEKME ---
   const fetchData = useCallback(async () => {
     try {
       const currentRoundId = await publicClient.readContract({
@@ -111,7 +119,6 @@ export default function Page() {
         args: [currentRoundId]
       });
 
-      // Viem tip dönüşümleri
       setRoundData({
         id: Number(currentRoundId),
         endTime: Number(details[0]),
@@ -121,21 +128,20 @@ export default function Page() {
         winner: Number(details[4])
       });
       setFetchError(false);
-
     } catch (error) {
-      console.error("Veri çekme hatası:", error);
+      console.error("Veri hatası:", error);
       setFetchError(true);
     }
   }, [publicClient]);
 
-  // Periyodik Veri Güncelleme
+  // Periyodik güncelleme
   useEffect(() => {
-    fetchData(); 
-    const interval = setInterval(fetchData, 3000); 
+    fetchData();
+    const interval = setInterval(fetchData, 3000);
     return () => clearInterval(interval);
   }, [fetchData]);
 
-  // --- GERİ SAYIM SAYACI ---
+  // --- SAYAÇ ---
   useEffect(() => {
     if (!roundData) return;
 
@@ -144,35 +150,34 @@ export default function Page() {
       const diff = roundData.endTime - now;
 
       if (roundData.finalized) {
-        setTimeLeft("🏁 Tur Bitti");
+        setTimeLeftLabel("🏁 Tur Bitti");
+        setIsRoundOver(true);
       } else if (diff <= 0) {
-        setTimeLeft("⏳ Reset Bekleniyor...");
+        setTimeLeftLabel("⏳ Süre Doldu");
+        setIsRoundOver(true);
       } else {
         const min = Math.floor(diff / 60);
         const sec = diff % 60;
-        setTimeLeft(`${min}dk ${sec < 10 ? '0' + sec : sec}sn`);
+        setTimeLeftLabel(`${min}dk ${sec < 10 ? '0' + sec : sec}sn`);
+        setIsRoundOver(false);
       }
     };
 
-    updateTimer(); // İlk renderda hemen çalıştır
+    updateTimer();
     const timer = setInterval(updateTimer, 1000);
-
     return () => clearInterval(timer);
   }, [roundData]);
 
-  // --- MADENCİLİK (WRITE) ---
-  const handleDeploy = useCallback(async () => {
-    if (selectedSquare === null) return;
-    setIsMining(true);
+  // --- İŞLEM FONKSİYONU (DEPLOY veya RESET) ---
+  const handleTransaction = useCallback(async (type: 'deploy' | 'reset') => {
+    if (type === 'deploy' && selectedSquare === null) return;
+    
+    setIsLoading(true);
     setTxHash(null);
 
     try {
-      // SDK provider kontrolü
       const provider = sdk.wallet.ethProvider;
-      if (!provider) {
-        alert("Cüzdan sağlayıcısı bulunamadı. Lütfen Frame uyumlu bir istemci kullanın.");
-        throw new Error("Cüzdan bulunamadı.");
-      }
+      if (!provider) throw new Error("Cüzdan bulunamadı (Frame içinde misiniz?)");
 
       const walletClient = createWalletClient({
         chain: baseSepolia,
@@ -180,68 +185,76 @@ export default function Page() {
       });
 
       const [address] = await walletClient.requestAddresses();
+      let data, value;
 
-      const data = encodeFunctionData({
-        abi: CONTRACT_ABI,
-        functionName: "deploy",
-        args: [BigInt(selectedSquare)],
-      });
+      if (type === 'deploy') {
+        data = encodeFunctionData({
+          abi: CONTRACT_ABI,
+          functionName: "deploy",
+          args: [BigInt(selectedSquare!)],
+        });
+        value = parseEther(ENTRY_FEE);
+      } else {
+        // Reset işlemi
+        data = encodeFunctionData({
+          abi: CONTRACT_ABI,
+          functionName: "reset",
+          args: [],
+        });
+        value = BigInt(0);
+      }
 
       const hash = await walletClient.sendTransaction({
         to: CONTRACT_ADDRESS,
         account: address,
-        value: parseEther(ENTRY_FEE), // Sabit değişkenden alıyoruz
+        value: value,
         data: data,
         chain: baseSepolia
       });
 
       setTxHash(hash);
-      
-      // Hızlı güncelleme için kısa bir bekleyiş
+      // İşlem onaylanana kadar beklemeden arayüzü güncellemeye çalış
       setTimeout(() => fetchData(), 2000);
 
-    } catch (error: any) {
-      console.error("Mining Error:", error);
-      // Kullanıcı reddettiyse veya hata olduysa
+    } catch (error) {
+      console.error("İşlem hatası:", error);
+      alert("İşlem başarısız oldu. Konsolu kontrol edin.");
     } finally {
-      setIsMining(false);
+      setIsLoading(false);
     }
   }, [selectedSquare, fetchData]);
 
-  // --- ARAYÜZ (UI) ---
-  if (!isSDKLoaded) {
-    return <div className="w-full h-screen flex items-center justify-center bg-slate-950 text-white">Yükleniyor...</div>;
-  }
+  if (!isSDKLoaded) return <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white">Yükleniyor...</div>;
 
   return (
-    <div className="w-full min-h-screen bg-slate-950 text-white p-4 flex flex-col items-center justify-start overflow-y-auto font-sans select-none">
+    <div className="w-full min-h-screen bg-slate-950 text-white p-4 flex flex-col items-center overflow-y-auto font-sans">
       
-      {/* BAŞLIK VE İSTATİSTİKLER */}
+      {/* BAŞLIK */}
       <div className="text-center mb-6 w-full max-w-sm">
-        <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-yellow-200 drop-shadow-sm mb-2">
+        <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-yellow-200 mb-2 drop-shadow-sm">
           BaseMiner ⛏️
         </h1>
         
         {fetchError && (
-           <div className="bg-red-900/50 text-red-200 text-xs p-2 rounded mb-2 border border-red-800">
-             Veri bağlantısında sorun var. Otomatik tekrar deneniyor...
-           </div>
+          <div className="mb-2 p-2 text-xs bg-red-900/50 border border-red-800 text-red-200 rounded">
+            Bağlantı sorunu var, tekrar deneniyor...
+          </div>
         )}
 
         {roundData ? (
           <div className="grid grid-cols-3 gap-2 bg-slate-900/80 p-3 rounded-xl border border-slate-800 text-xs shadow-inner">
             <div className="flex flex-col items-start">
-              <span className="text-slate-400 font-medium">Tur</span>
-              <span className="font-bold text-white text-sm">#{roundData.id}</span>
+              <span className="text-slate-400">Tur</span>
+              <span className="font-bold text-white">#{roundData.id}</span>
             </div>
-            <div className="flex flex-col items-center border-l border-r border-slate-800">
-              <span className="text-slate-400 font-medium">Havuz</span>
-              <span className="font-bold text-green-400 text-sm">{Number(roundData.totalEth).toFixed(4)} ETH</span>
+            <div className="flex flex-col items-center border-l border-r border-slate-800 px-2">
+              <span className="text-slate-400">Havuz</span>
+              <span className="font-bold text-green-400">{Number(roundData.totalEth).toFixed(4)} ETH</span>
             </div>
             <div className="flex flex-col items-end">
-              <span className="text-slate-400 font-medium">Süre</span>
-              <span className={`font-bold text-sm ${roundData.finalized ? 'text-red-400' : 'text-yellow-300'}`}>
-                {timeLeft}
+              <span className="text-slate-400">Süre</span>
+              <span className={`font-bold ${isRoundOver ? 'text-red-400' : 'text-yellow-300'}`}>
+                {timeLeftLabel}
               </span>
             </div>
           </div>
@@ -250,106 +263,102 @@ export default function Page() {
         )}
       </div>
 
-      {/* 5x5 IZGARA ALANI */}
-      <div className="relative mb-8">
-        <div className="grid grid-cols-5 gap-2 p-3 bg-slate-900 rounded-2xl shadow-2xl border border-slate-800 ring-1 ring-slate-800">
+      {/* IZGARA */}
+      <div className="relative mb-6">
+        <div className="grid grid-cols-5 gap-2 p-3 bg-slate-900 rounded-2xl border border-slate-800 shadow-2xl">
           {Array.from({ length: 25 }).map((_, index) => {
-            const stakeAmount = roundData?.stakes ? Number(formatEther(roundData.stakes[index])) : 0;
+            const stake = roundData?.stakes ? Number(formatEther(roundData.stakes[index])) : 0;
             const isWinner = roundData?.finalized && roundData?.winner === index;
             const isSelected = selectedSquare === index;
-            
+
             return (
               <button
                 key={index}
-                onClick={() => !roundData?.finalized && setSelectedSquare(index)}
-                disabled={!!roundData?.finalized}
+                onClick={() => !isRoundOver && !roundData?.finalized && setSelectedSquare(index)}
+                disabled={isRoundOver || !!roundData?.finalized}
                 className={`
-                  w-12 h-12 sm:w-14 sm:h-14 rounded-xl transition-all duration-200
-                  flex flex-col items-center justify-center relative overflow-hidden group
+                  w-12 h-12 sm:w-14 sm:h-14 rounded-xl relative transition-all duration-200
+                  flex flex-col items-center justify-center
                   ${isWinner 
-                    ? "bg-yellow-500 text-black shadow-[0_0_20px_rgba(234,179,8,0.6)] border-2 border-white z-10 scale-105" 
-                    : isSelected 
-                      ? "bg-slate-700 border-2 border-yellow-400 shadow-[0_0_10px_rgba(250,204,21,0.2)]" 
-                      : "bg-slate-800 hover:bg-slate-750 border border-slate-700/50 hover:border-slate-600"}
+                    ? "bg-yellow-500 text-black shadow-[0_0_20px_rgba(234,179,8,0.6)] z-10 scale-110 border-2 border-white" 
+                    : isSelected
+                      ? "bg-slate-700 border-2 border-yellow-400 shadow-[0_0_10px_rgba(250,204,21,0.2)]"
+                      : "bg-slate-800 hover:bg-slate-700 border border-slate-700/50"}
                 `}
               >
-                {/* Kare Numarası */}
-                <span className={`absolute top-1 left-1.5 text-[9px] font-mono leading-none ${isWinner ? 'text-yellow-900 font-bold' : 'text-slate-600'}`}>
+                <span className={`absolute top-1 left-1.5 text-[9px] leading-none ${isWinner ? 'text-yellow-900 font-bold' : 'text-slate-600'}`}>
                   {index + 1}
                 </span>
-
-                {/* Yatırım Varsa Göster */}
-                {stakeAmount > 0 && (
-                  <div className="flex flex-col items-center justify-center h-full pt-2">
-                    <span className={`text-[9px] font-bold ${isWinner ? 'text-black' : 'text-green-400'}`}>
-                      {stakeAmount.toFixed(3)}
-                    </span>
-                  </div>
+                
+                {stake > 0 && (
+                  <span className={`text-[9px] font-bold mt-1 ${isWinner ? 'text-black' : 'text-green-400'}`}>
+                    {stake.toFixed(3)}
+                  </span>
                 )}
 
-                {/* Seçim / Kazanan İkonları */}
-                {isWinner && <span className="absolute -bottom-1 -right-1 text-xl animate-bounce">🏆</span>}
-                {!isWinner && isSelected && <span className="absolute bottom-1 right-1 text-xs opacity-80">⛏️</span>}
+                {isWinner && <span className="absolute -bottom-1 -right-1 text-lg">🏆</span>}
+                {!isWinner && isSelected && <span className="absolute bottom-1 right-1 text-xs">⛏️</span>}
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* AKSİYON BUTONU */}
+      {/* BUTON ALANI */}
       <div className="w-full max-w-xs flex flex-col gap-3">
-        <button
-          onClick={handleDeploy}
-          disabled={selectedSquare === null || isMining || !!roundData?.finalized}
-          className={`
-            w-full py-4 rounded-xl font-bold text-lg shadow-lg relative overflow-hidden
-            transition-all duration-300 transform active:scale-95
-            ${roundData?.finalized
-              ? "bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700"
-              : selectedSquare === null 
-                ? "bg-slate-800 text-slate-600 cursor-not-allowed" 
-                : isMining 
-                  ? "bg-yellow-700 cursor-wait text-yellow-200/80"
-                  : "bg-gradient-to-r from-yellow-500 to-yellow-600 text-black hover:shadow-yellow-500/20 hover:brightness-110"}
-          `}
-        >
-          {roundData?.finalized 
-            ? "Tur Tamamlandı" 
-            : isMining 
-              ? (
-                <div className="flex items-center justify-center gap-2">
-                   <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin"></div>
-                   <span>İşleniyor...</span>
-                </div>
-              )
-              : selectedSquare === null 
-                ? "Bir Kare Seç" 
-                : `KAZI YAP (#${selectedSquare + 1})`}
-        </button>
-        
-        {/* Kazı Maliyeti Bilgisi */}
-        {!roundData?.finalized && (
+        {/* Duruma göre Buton Değişir */}
+        {isRoundOver && !roundData?.finalized ? (
+          <button
+            onClick={() => handleTransaction('reset')}
+            disabled={isLoading}
+            className="w-full py-4 rounded-xl font-bold text-lg bg-red-600 hover:bg-red-500 text-white shadow-lg transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isLoading ? "Sıfırlanıyor..." : "🔄 Turu Manuel Sıfırla"}
+          </button>
+        ) : (
+          <button
+            onClick={() => handleTransaction('deploy')}
+            disabled={selectedSquare === null || isLoading || isRoundOver || !!roundData?.finalized}
+            className={`
+              w-full py-4 rounded-xl font-bold text-lg shadow-lg relative overflow-hidden transition-all active:scale-95
+              ${(isRoundOver || roundData?.finalized)
+                ? "bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700"
+                : selectedSquare === null
+                  ? "bg-slate-800 text-slate-500 cursor-not-allowed"
+                  : isLoading
+                    ? "bg-yellow-700 text-yellow-200 cursor-wait"
+                    : "bg-gradient-to-r from-yellow-500 to-yellow-600 text-black hover:shadow-yellow-500/20"}
+            `}
+          >
+            {roundData?.finalized 
+              ? "Tur Sona Erdi" 
+              : isLoading 
+                ? "İşlem Yapılıyor..." 
+                : selectedSquare === null 
+                  ? "Bir Kare Seçin" 
+                  : `KAZI YAP (#${selectedSquare + 1})`}
+          </button>
+        )}
+
+        {!isRoundOver && !roundData?.finalized && (
           <div className="flex justify-between text-[10px] text-slate-500 px-2 font-mono">
-             <span>Maliyet: {ENTRY_FEE} ETH</span>
-             <span>+ Gas Ücreti</span>
+            <span>Giriş: {ENTRY_FEE} ETH</span>
+            <span>+ Gas</span>
           </div>
         )}
       </div>
 
-      {/* İŞLEM BİLGİSİ (SUCCESS TOAST) */}
+      {/* TRANSACTION SUCCESS */}
       {txHash && (
-        <div className="mt-6 w-full max-w-xs bg-green-950/40 border border-green-500/30 rounded-lg p-3 text-center animate-fade-in backdrop-blur-sm">
-          <div className="flex items-center justify-center gap-2 mb-1">
-             <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-             <span className="font-bold text-green-400 text-sm">İşlem Gönderildi!</span>
-          </div>
+        <div className="mt-6 w-full max-w-xs bg-green-950/40 border border-green-500/30 rounded-lg p-3 text-center backdrop-blur-sm animate-in fade-in slide-in-from-bottom-4">
+          <div className="text-green-400 font-bold text-sm mb-1">✅ İşlem Gönderildi!</div>
           <a 
-            href={`https://sepolia.basescan.org/tx/${txHash}`} 
-            target="_blank" 
+            href={`https://sepolia.basescan.org/tx/${txHash}`}
+            target="_blank"
             rel="noopener noreferrer"
-            className="text-xs text-green-300/60 hover:text-green-200 underline decoration-dotted underline-offset-2"
+            className="text-xs text-green-300/60 hover:text-green-200 underline decoration-dotted"
           >
-            Explorer'da Görüntüle ↗
+            Explorer'da Görüntüle
           </a>
         </div>
       )}

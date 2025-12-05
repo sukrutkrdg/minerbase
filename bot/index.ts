@@ -5,7 +5,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const ACCOUNT = privateKeyToAccount(process.env.PRIVATE_KEY as `0x${string}`);
-const CONTRACT_ADDRESS = "DEPLOY_EDILEN_KONTRAT_ADRESI"; // Güncellemeyi unutma!
+const CONTRACT_ADDRESS = "0xb68bC7FEDf18c5cF41b39ff75ecD9c04C1164244"; // Güncellemeyi unutma!
 
 const client = createPublicClient({
   chain: baseSepolia,
